@@ -1,0 +1,562 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Small Business Inventory & Sales App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-4 max-w-6xl">
+        <h1 class="text-3xl font-bold text-center mb-6">Inventory & Sales Tracker</h1>
+
+        <!-- Tabs for Navigation -->
+        <div class="flex justify-center mb-4 flex-wrap">
+            <button onclick="showSection('inventory')" class="px-4 py-2 bg-blue-500 text-white rounded-l hover:bg-blue-600">Inventory</button>
+            <button onclick="showSection('sales')" class="px-4 py-2 bg-blue-500 text-white hover:bg-blue-600">Record Sale</button>
+            <button onclick="showSection('customers')" class="px-4 py-2 bg-blue-500 text-white hover:bg-blue-600">Customers</button>
+            <button onclick="showSection('reports')" class="px-4 py-2 bg-blue-500 text-white rounded-r hover:bg-blue-600">Reports</button>
+        </div>
+
+        <!-- Inventory Section -->
+        <div id="inventory" class="section">
+            <h2 class="text-2xl font-semibold mb-4">Manage Inventory</h2>
+            <form id="productForm" class="mb-4">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <input id="productName" type="text" placeholder="Product Name" class="p-2 border rounded" required>
+                    <input id="productSKU" type="text" placeholder="SKU (e.g., ABC123)" class="p-2 border rounded" required>
+                    <input id="productQuantity" type="number" placeholder="Quantity" min="0" class="p-2 border rounded" required>
+                    <input id="productPrice" type="number" placeholder="Price (GHS)" min="0" step="0.01" class="p-2 border rounded" required>
+                    <input id="productVariants" type="text" placeholder="Variants (e.g., Blue,Large;Red,Small)" class="p-2 border rounded">
+                    <input id="productBundle" type="text" placeholder="Bundle SKUs (e.g., SKU1,SKU2)" class="p-2 border rounded">
+                    <input id="reorderThreshold" type="number" placeholder="Reorder Threshold" min="0" class="p-2 border rounded">
+                </div>
+                <button type="submit" class="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">Add Product</button>
+            </form>
+            <h3 class="text-xl font-semibold mb-2">Current Inventory</h3>
+            <table class="w-full border-collapse bg-white shadow rounded">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="p-2 border">Name</th>
+                        <th class="p-2 border">SKU</th>
+                        <th class="p-2 border">Quantity</th>
+                        <th class="p-2 border">Price (GHS)</th>
+                        <th class="p-2 border">Variants</th>
+                        <th class="p-2 border">Bundle</th>
+                        <th class="p-2 border">Status</th>
+                        <th class="p-2 border">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryTable"></tbody>
+            </table>
+        </div>
+
+        <!-- Sales Section -->
+        <div id="sales" class="section hidden">
+            <h2 class="text-2xl font-semibold mb-4">Record Sale</h2>
+            <form id="salesForm" class="mb-4">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <select id="saleProduct" class="p-2 border rounded" required>
+                        <option value="">Select Product</option>
+                    </select>
+                    <input id="saleQuantity" type="number" placeholder="Quantity Sold" min="1" class="p-2 border rounded" required>
+                    <input id="customerName" type="text" placeholder="Customer Name" class="p-2 border rounded">
+                    <input id="customerPhone" type="tel" placeholder="Customer Phone" class="p-2 border rounded">
+                    <input id="customerEmail" type="email" placeholder="Customer Email" class="p-2 border rounded">
+                    <select id="paymentMethod" class="p-2 border rounded" required>
+                        <option value="Mobile Money">Mobile Money</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Bank Card">Bank Card</option>
+                    </select>
+                    <div class="flex items-center">
+                        <input id="paymentReceived" type="checkbox" class="mr-2">
+                        <label for="paymentReceived">Payment Received</label>
+                    </div>
+                    <select id="deliveryStatus" class="p-2 border rounded" required>
+                        <option value="Pending">Pending</option>
+                        <option value="Shipped">Shipped</option>
+                        <option value="Delivered">Delivered</option>
+                    </select>
+                    <select id="saleChannel" class="p-2 border rounded" required>
+                        <option value="Online">Online</option>
+                        <option value="In-Store">In-Store</option>
+                    </select>
+                </div>
+                <button type="submit" class="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">Record Sale</button>
+                <button type="button" onclick="simulateMoMoPayment()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Simulate MoMo Payment</button>
+            </form>
+            <h3 class="text-xl font-semibold mb-2">Sales History</h3>
+            <button onclick="exportSalesToPDF()" class="mb-4 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600">Export Sales to PDF</button>
+            <table class="w-full border-collapse bg-white shadow rounded">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="p-2 border">Order ID</th>
+                        <th class="p-2 border">Date</th>
+                        <th class="p-2 border">Customer</th>
+                        <th class="p-2 border">Product</th>
+                        <th class="p-2 border">SKU</th>
+                        <th class="p-2 border">Quantity</th>
+                        <th class="p-2 border">Total (GHS)</th>
+                        <th class="p-2 border">Payment</th>
+                        <th class="p-2 border">Delivery</th>
+                        <th class="p-2 border">Channel</th>
+                        <th class="p-2 border">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="salesTable"></tbody>
+            </table>
+        </div>
+
+        <!-- Customers Section -->
+        <div id="customers" class="section hidden">
+            <h2 class="text-2xl font-semibold mb-4">Manage Customers</h2>
+            <table class="w-full border-collapse bg-white shadow rounded">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="p-2 border">Name</th>
+                        <th class="p-2 border">Phone</th>
+                        <th class="p-2 border">Email</th>
+                        <th class="p-2 border">Loyalty Points</th>
+                        <th class="p-2 border">Total Spent (GHS)</th>
+                    </tr>
+                </thead>
+                <tbody id="customersTable"></tbody>
+            </table>
+        </div>
+
+        <!-- Reports Section -->
+        <div id="reports" class="section hidden">
+            <h2 class="text-2xl font-semibold mb-4">Reports</h2>
+            <div class="mb-4">
+                <label for="reportFilter" class="mr-2">Filter by:</label>
+                <select id="reportFilter" class="p-2 border rounded" onchange="updateReports()">
+                    <option value="all">All Sales</option>
+                    <option value="customer">By Customer</option>
+                    <option value="product">By Product</option>
+                    <option value="payment">By Payment Method</option>
+                    <option value="date">By Date Range</option>
+                </select>
+                <div id="filterOptions" class="mt-2"></div>
+                <button onclick="exportReportsToPDF()" class="mt-4 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600">Export Reports to PDF</button>
+            </div>
+            <div class="bg-white p-4 shadow rounded">
+                <h3 class="text-lg font-semibold">Inventory Summary</h3>
+                <p>Total Products: <span id="totalProducts">0</span></p>
+                <p>Total Stock Value: <span id="totalStockValue">₵0.00</span></p>
+                <p>Low Stock Alerts: <span id="lowStockAlerts">0</span></p>
+                <h3 class="text-lg font-semibold mt-4">Sales Summary</h3>
+                <p>Total Sales: <span id="totalSales">0</span></p>
+                <p>Total Revenue: <span id="totalRevenue">₵0.00</span></p>
+                <p>Paid Revenue: <span id="paidRevenue">₵0.00</span></p>
+                <p>Unpaid Revenue: <span id="unpaidRevenue">₵0.00</span></p>
+                <h3 class="text-lg font-semibold mt-4">Delivery Summary</h3>
+                <p>Pending Deliveries: <span id="pendingDeliveries">0</span></p>
+                <p>Shipped Deliveries: <span id="shippedDeliveries">0</span></p>
+                <p>Delivered Orders: <span id="deliveredOrders">0</span></p>
+                <div id="detailedReports" class="mt-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let products = JSON.parse(localStorage.getItem('products')) || [];
+        let sales = JSON.parse(localStorage.getItem('sales')) || [];
+        let customers = JSON.parse(localStorage.getItem('customers')) || [];
+
+        function saveData() {
+            localStorage.setItem('products', JSON.stringify(products));
+            localStorage.setItem('sales', JSON.stringify(sales));
+            localStorage.setItem('customers', JSON.stringify(customers));
+        }
+
+        function generateOrderId() {
+            return 'ORD-' + Date.now();
+        }
+
+        function showSection(sectionId) {
+            document.querySelectorAll('.section').forEach(section => {
+                section.classList.add('hidden');
+            });
+            document.getElementById(sectionId).classList.remove('hidden');
+        }
+
+        function updateInventoryTable() {
+            const table = document.getElementById('inventoryTable');
+            table.innerHTML = '';
+            products.forEach((product, index) => {
+                const lowStock = product.quantity <= (product.reorderThreshold || 0);
+                const row = table.insertRow();
+                row.innerHTML = `
+                    <td class="p-2 border">${product.name}</td>
+                    <td class="p-2 border">${product.sku}</td>
+                    <td class="p-2 border ${lowStock ? 'text-red-500' : ''}">${product.quantity}</td>
+                    <td class="p-2 border">₵${parseFloat(product.price).toFixed(2)}</td>
+                    <td class="p-2 border">${product.variants ? product.variants.join(', ') : '-'}</td>
+                    <td class="p-2 border">${product.bundle ? product.bundle.join(', ') : '-'}</td>
+                    <td class="p-2 border">${lowStock ? 'Low Stock' : 'OK'}</td>
+                    <td class="p-2 border">
+                        <button onclick="editProduct(${index})" class="px-2 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit</button>
+                        <button onclick="deleteProduct(${index})" class="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600">Delete</button>
+                    </td>
+                `;
+            });
+            updateReports();
+        }
+
+        function updateSalesForm() {
+            const select = document.getElementById('saleProduct');
+            select.innerHTML = '<option value="">Select Product</option>';
+            products.forEach(product => {
+                if (product.quantity > 0) {
+                    const option = document.createElement('option');
+                    option.value = product.sku;
+                    option.textContent = `${product.name}${product.variants ? ' (' + product.variants.join(', ') + ')' : ''} (Stock: ${product.quantity})`;
+                    select.appendChild(option);
+                }
+            });
+        }
+
+        function updateSalesTable() {
+            const table = document.getElementById('salesTable');
+            table.innerHTML = '';
+            sales.forEach((sale, index) => {
+                const product = products.find(p => p.sku === sale.sku);
+                const productName = product ? product.name : 'Unknown';
+                const customer = customers.find(c => c.phone === sale.customerPhone) || {};
+                const row = table.insertRow();
+                row.innerHTML = `
+                    <td class="p-2 border">${sale.orderId}</td>
+                    <td class="p-2 border">${new Date(sale.date).toLocaleString()}</td>
+                    <td class="p-2 border">${customer.name || sale.customerName || '-'}</td>
+                    <td class="p-2 border">${productName}</td>
+                    <td class="p-2 border">${sale.sku}</td>
+                    <td class="p-2 border">${sale.quantity}</td>
+                    <td class="p-2 border">₵${parseFloat(sale.total).toFixed(2)}</td>
+                    <td class="p-2 border">${sale.paymentReceived ? sale.paymentMethod + ' (Paid)' : 'Unpaid'}</td>
+                    <td class="p-2 border">${sale.deliveryStatus}</td>
+                    <td class="p-2 border">${sale.channel}</td>
+                    <td class="p-2 border">
+                        <button onclick="editSale(${index})" class="px-2 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600">Edit</button>
+                    </td>
+                `;
+            });
+            updateReports();
+        }
+
+        function updateCustomersTable() {
+            const table = document.getElementById('customersTable');
+            table.innerHTML = '';
+            customers.forEach(customer => {
+                const row = table.insertRow();
+                row.innerHTML = `
+                    <td class="p-2 border">${customer.name || '-'}</td>
+                    <td class="p-2 border">${customer.phone || '-'}</td>
+                    <td class="p-2 border">${customer.email || '-'}</td>
+                    <td class="p-2 border">${customer.loyaltyPoints || 0}</td>
+                    <td class="p-2 border">₵${(customer.totalSpent || 0).toFixed(2)}</td>
+                `;
+            });
+        }
+
+        function updateReports() {
+            const totalProducts = products.length;
+            const totalStockValue = products.reduce((sum, p) => sum + p.quantity * p.price, 0);
+            const lowStockAlerts = products.filter(p => p.quantity <= (p.reorderThreshold || 0)).length;
+            const totalSales = sales.reduce((sum, s) => sum + s.quantity, 0);
+            const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
+            const paidRevenue = sales.reduce((sum, s) => s.paymentReceived ? sum + s.total : sum, 0);
+            const unpaidRevenue = totalRevenue - paidRevenue;
+            const pendingDeliveries = sales.filter(s => s.deliveryStatus === 'Pending').length;
+            const shippedDeliveries = sales.filter(s => s.deliveryStatus === 'Shipped').length;
+            const deliveredOrders = sales.filter(s => s.deliveryStatus === 'Delivered').length;
+
+            document.getElementById('totalProducts').textContent = totalProducts;
+            document.getElementById('totalStockValue').textContent = `₵${totalStockValue.toFixed(2)}`;
+            document.getElementById('lowStockAlerts').textContent = lowStockAlerts;
+            document.getElementById('totalSales').textContent = totalSales;
+            document.getElementById('totalRevenue').textContent = `₵${totalRevenue.toFixed(2)}`;
+            document.getElementById('paidRevenue').textContent = `₵${paidRevenue.toFixed(2)}`;
+            document.getElementById('unpaidRevenue').textContent = `₵${unpaidRevenue.toFixed(2)}`;
+            document.getElementById('pendingDeliveries').textContent = pendingDeliveries;
+            document.getElementById('shippedDeliveries').textContent = shippedDeliveries;
+            document.getElementById('deliveredOrders').textContent = deliveredOrders;
+
+            const filter = document.getElementById('reportFilter').value;
+            const filterOptions = document.getElementById('filterOptions');
+            const detailedReports = document.getElementById('detailedReports');
+            filterOptions.innerHTML = '';
+            detailedReports.innerHTML = '';
+
+            if (filter === 'customer') {
+                filterOptions.innerHTML = `
+                    <select id="customerFilter" class="p-2 border rounded">
+                        <option value="">Select Customer</option>
+                        ${customers.map(c => `<option value="${c.phone}">${c.name || c.phone}</option>`).join('')}
+                    </select>
+                `;
+                const selectedCustomer = document.getElementById('customerFilter')?.value;
+                const filteredSales = selectedCustomer ? sales.filter(s => s.customerPhone === selectedCustomer) : sales;
+                const customerRevenue = filteredSales.reduce((sum, s) => sum + s.total, 0);
+                detailedReports.innerHTML = `
+                    <h3 class="text-lg font-semibold">Customer Sales</h3>
+                    <p>Total Revenue: ₵${customerRevenue.toFixed(2)}</p>
+                    <p>Sales Count: ${filteredSales.length}</p>
+                `;
+            } else if (filter === 'product') {
+                filterOptions.innerHTML = `
+                    <select id="productFilter" class="p-2 border rounded">
+                        <option value="">Select Product</option>
+                        ${products.map(p => `<option value="${p.sku}">${p.name}</option>`).join('')}
+                    </select>
+                `;
+                const selectedProduct = document.getElementById('productFilter')?.value;
+                const filteredSales = selectedProduct ? sales.filter(s => s.sku === selectedProduct) : sales;
+                const productRevenue = filteredSales.reduce((sum, s) => sum + s.total, 0);
+                detailedReports.innerHTML = `
+                    <h3 class="text-lg font-semibold">Product Sales</h3>
+                    <p>Total Revenue: ₵${productRevenue.toFixed(2)}</p>
+                    <p>Sales Count: ${filteredSales.length}</p>
+                `;
+            } else if (filter === 'payment') {
+                filterOptions.innerHTML = `
+                    <select id="paymentFilter" class="p-2 border rounded">
+                        <option value="">Select Payment Method</option>
+                        <option value="Mobile Money">Mobile Money</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Bank Card">Bank Card</option>
+                    </select>
+                `;
+                const selectedPayment = document.getElementById('paymentFilter')?.value;
+                const filteredSales = selectedPayment ? sales.filter(s => s.paymentMethod === selectedPayment) : sales;
+                const paymentRevenue = filteredSales.reduce((sum, s) => sum + s.total, 0);
+                detailedReports.innerHTML = `
+                    <h3 class="text-lg font-semibold">Payment Method Sales</h3>
+                    <p>Total Revenue: ₵${paymentRevenue.toFixed(2)}</p>
+                    <p>Sales Count: ${filteredSales.length}</p>
+                `;
+            } else if (filter === 'date') {
+                filterOptions.innerHTML = `
+                    <input id="startDate" type="date" class="p-2 border rounded mr-2">
+                    <input id="endDate" type="date" class="p-2 border rounded">
+                `;
+                const startDate = document.getElementById('startDate')?.value;
+                const endDate = document.getElementById('endDate')?.value;
+                const filteredSales = startDate && endDate ? sales.filter(s => {
+                    const saleDate = new Date(s.date);
+                    return saleDate >= new Date(startDate) && saleDate <= new Date(endDate);
+                }) : sales;
+                const dateRevenue = filteredSales.reduce((sum, s) => sum + s.total, 0);
+                detailedReports.innerHTML = `
+                    <h3 class="text-lg font-semibold">Date Range Sales</h3>
+                    <p>Total Revenue: ₵${dateRevenue.toFixed(2)}</p>
+                    <p>Sales Count: ${filteredSales.length}</p>
+                `;
+            }
+        }
+
+        function exportSalesToPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.text('Sales History', 10, 10);
+            let y = 20;
+            sales.forEach((sale, index) => {
+                const product = products.find(p => p.sku === sale.sku);
+                const customer = customers.find(c => c.phone === sale.customerPhone) || {};
+                doc.text(`${sale.orderId} | ${new Date(sale.date).toLocaleString()} | ${customer.name || sale.customerName || '-'} | ${product?.name || 'Unknown'} | ₵${sale.total.toFixed(2)} | ${sale.paymentReceived ? sale.paymentMethod + ' (Paid)' : 'Unpaid'} | ${sale.deliveryStatus} | ${sale.channel}`, 10, y);
+                y += 10;
+            });
+            doc.save('sales_history.pdf');
+        }
+
+        function exportReportsToPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.text('Business Reports', 10, 10);
+            doc.text(`Total Products: ${document.getElementById('totalProducts').textContent}`, 10, 20);
+            doc.text(`Total Stock Value: ${document.getElementById('totalStockValue').textContent}`, 10, 30);
+            doc.text(`Low Stock Alerts: ${document.getElementById('lowStockAlerts').textContent}`, 10, 40);
+            doc.text(`Total Sales: ${document.getElementById('totalSales').textContent}`, 10, 50);
+            doc.text(`Total Revenue: ${document.getElementById('totalRevenue').textContent}`, 10, 60);
+            doc.text(`Paid Revenue: ${document.getElementById('paidRevenue').textContent}`, 10, 70);
+            doc.text(`Unpaid Revenue: ${document.getElementById('unpaidRevenue').textContent}`, 10, 80);
+            doc.text(`Pending Deliveries: ${document.getElementById('pendingDeliveries').textContent}`, 10, 90);
+            doc.text(`Shipped Deliveries: ${document.getElementById('shippedDeliveries').textContent}`, 10, 100);
+            doc.text(`Delivered Orders: ${document.getElementById('deliveredOrders').textContent}`, 10, 110);
+            doc.save('business_reports.pdf');
+        }
+
+        function simulateMoMoPayment() {
+            alert('Simulating MTN MoMo Payment: Payment request sent to customer. (Actual integration requires server-side setup with MTN MoMo API.)');
+            document.getElementById('paymentReceived').checked = true;
+            document.getElementById('paymentMethod').value = 'Mobile Money';
+        }
+
+        document.getElementById('productForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = document.getElementById('productName').value;
+            const sku = document.getElementById('productSKU').value;
+            const quantity = parseInt(document.getElementById('productQuantity').value);
+            const price = parseFloat(document.getElementById('productPrice').value);
+            const variants = document.getElementById('productVariants').value.split(';').map(v => v.trim()).filter(v => v);
+            const bundle = document.getElementById('productBundle').value.split(',').map(s => s.trim()).filter(s => s);
+            const reorderThreshold = parseInt(document.getElementById('reorderThreshold').value) || 0;
+
+            if (products.some(p => p.sku === sku)) {
+                alert('SKU must be unique!');
+                return;
+            }
+
+            products.push({ name, sku, quantity, price, variants, bundle, reorderThreshold });
+            saveData();
+            updateInventoryTable();
+            updateSalesForm();
+            document.getElementById('productForm').reset();
+        });
+
+        document.getElementById('salesForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const sku = document.getElementById('saleProduct').value;
+            const quantity = parseInt(document.getElementById('saleQuantity').value);
+            const customerName = document.getElementById('customerName').value;
+            const customerPhone = document.getElementById('customerPhone').value;
+            const customerEmail = document.getElementById('customerEmail').value;
+            const paymentMethod = document.getElementById('paymentMethod').value;
+            const paymentReceived = document.getElementById('paymentReceived').checked;
+            const deliveryStatus = document.getElementById('deliveryStatus').value;
+            const channel = document.getElementById('saleChannel').value;
+            const product = products.find(p => p.sku === sku);
+
+            if (!product || quantity > product.quantity) {
+                alert('Invalid sale: Not enough stock or product not found!');
+                return;
+            }
+
+            product.quantity -= quantity;
+            const total = quantity * product.price;
+            const orderId = generateOrderId();
+            const loyaltyPoints = Math.floor(total / 10); // 1 point per ₵10
+            if (customerPhone) {
+                let customer = customers.find(c => c.phone === customerPhone);
+                if (!customer) {
+                    customer = { phone: customerPhone, name: customerName, email: customerEmail, loyaltyPoints: 0, totalSpent: 0 };
+                    customers.push(customer);
+                }
+                customer.loyaltyPoints = (customer.loyaltyPoints || 0) + loyaltyPoints;
+                customer.totalSpent = (customer.totalSpent || 0) + total;
+                customer.name = customer.name || customerName;
+                customer.email = customer.email || customerEmail;
+            }
+            sales.push({ orderId, date: new Date().toISOString(), sku, quantity, total, customerName, customerPhone, customerEmail, paymentMethod, paymentReceived, deliveryStatus, channel });
+            saveData();
+            updateInventoryTable();
+            updateSalesForm();
+            updateSalesTable();
+            updateCustomersTable();
+            document.getElementById('salesForm').reset();
+        });
+
+        function editProduct(index) {
+            const product = products[index];
+            document.getElementById('productName').value = product.name;
+            document.getElementById('productSKU').value = product.sku;
+            document.getElementById('productQuantity').value = product.quantity;
+            document.getElementById('productPrice').value = product.price;
+            document.getElementById('productVariants').value = product.variants ? product.variants.join('; ') : '';
+            document.getElementById('productBundle').value = product.bundle ? product.bundle.join(', ') : '';
+            document.getElementById('reorderThreshold').value = product.reorderThreshold || '';
+            products.splice(index, 1);
+            saveData();
+            updateInventoryTable();
+            updateSalesForm();
+        }
+
+        function deleteProduct(index) {
+            if (confirm('Are you sure you want to delete this product?')) {
+                products.splice(index, 1);
+                saveData();
+                updateInventoryTable();
+                updateSalesForm();
+            }
+        }
+
+        function editSale(index) {
+            const sale = sales[index];
+            const paymentReceived = prompt('Is payment received? (yes/no)', sale.paymentReceived ? 'yes' : 'no');
+            const deliveryStatus = prompt('Delivery Status (Pending/Shipped/Delivered)', sale.deliveryStatus);
+            const paymentMethod = prompt('Payment Method (Mobile Money/Cash/Bank Card)', sale.paymentMethod);
+            const channel = prompt('Channel (Online/In-Store)', sale.channel);
+
+            if (paymentReceived && deliveryStatus && paymentMethod && channel) {
+                sale.paymentReceived = paymentReceived.toLowerCase() === 'yes';
+                if (['Pending', 'Shipped', 'Delivered'].includes(deliveryStatus)) {
+                    sale.deliveryStatus = deliveryStatus;
+                } else {
+                    alert('Invalid delivery status! Use Pending, Shipped, or Delivered.');
+                    return;
+                }
+                if (['Mobile Money', 'Cash', 'Bank Card'].includes(paymentMethod)) {
+                    sale.paymentMethod = paymentMethod;
+                } else {
+                    alert('Invalid payment method! Use Mobile Money, Cash, or Bank Card.');
+                    return;
+                }
+                if (['Online', 'In-Store'].includes(channel)) {
+                    sale.channel = channel;
+                } else {
+                    alert('Invalid channel! Use Online or In-Store.');
+                    return;
+                }
+                saveData();
+                updateSalesTable();
+            }
+        }
+
+        // Initialize
+        updateInventoryTable();
+        updateSalesForm();
+        updateSalesTable();
+        updateCustomersTable();
+        showSection('inventory');
+    </script>
+</body>
+</html>
